@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Traffix</string>
+    <string name="title_activity_traffic_map">Traffic Map</string>
+</resources>
