@@ -2,29 +2,44 @@ package traffix.jaba.com.traffix;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.AsyncTask;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import org.apache.commons.net.ftp.FTP;
 import org.apache.commons.net.ftp.FTPClient;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class TrafficMapActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleMap.OnMapClickListener {
 
     private GoogleMap mMap;
+    static String  TRAFFIC = "TRAFFIC";
+    static String  LOCATION = "LOCATION";
+    static String  SPEED = "SPEED";
+    static String  COUNT = "COUNT";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,16 +64,56 @@ public class TrafficMapActivity extends AppCompatActivity implements OnMapReadyC
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
+        mMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
+
+            @Override
+            public View getInfoWindow(Marker arg0) {
+                return null;
+            }
+
+            @Override
+            public View getInfoContents(Marker marker) {
+
+                LinearLayout info = new LinearLayout(getApplicationContext());
+                info.setOrientation(LinearLayout.VERTICAL);
+
+                TextView title = new TextView(getApplicationContext());
+                title.setTextColor(Color.BLACK);
+                title.setGravity(Gravity.CENTER);
+                title.setTypeface(null, Typeface.BOLD);
+                title.setText(marker.getTitle());
+
+                TextView snippet = new TextView(getApplicationContext());
+                snippet.setTextColor(Color.GRAY);
+                snippet.setText(marker.getSnippet());
+
+                info.addView(title);
+                info.addView(snippet);
+
+                return info;
+            }
+        });
+
         mMap.setOnMapClickListener(this);
-        // Add a marker in Sydney and move the camera
-        LatLng malta = new LatLng(35.9375, 14.3754);
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(malta, 10));
-        String rawData[] = getIntent().getStringArrayExtra("DATA");
+        setMarkers();
+    }
+
+    private void setMarkers() {
+        Log.i("in Markers", "now");
+        LatLng Attard = new LatLng(35.8931352,14.4513628);
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(Attard, 10));
+        String rawData = getIntent().getStringExtra("DATA");
         if (rawData != null) {
-            if (rawData[0].equals("yes")) {
-                mMap.addMarker(new MarkerOptions().position(malta).title("There is traffic at this location").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
-            } else {
-                mMap.addMarker(new MarkerOptions().position(malta).title("There isn't traffic at this location").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
+            try {
+                JSONObject serverRes = new JSONObject(rawData);
+                JSONObject a = getLatestFromJson(serverRes);
+                if (a.get(TRAFFIC).equals("true")) {
+                    mMap.addMarker(new MarkerOptions().position(Attard).title(a.get(LOCATION) + " is currently congested with " + a.get(COUNT) + " vehicles.\n Our traffic score is: " + a.get(SPEED)).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
+                } else {
+                    mMap.addMarker(new MarkerOptions().position(Attard).title(a.get(LOCATION) + " is currently not congested with " + a.get(COUNT) + " vehicles.\n Our traffic score is: " + a.get(SPEED)).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }
@@ -66,6 +121,7 @@ public class TrafficMapActivity extends AppCompatActivity implements OnMapReadyC
     @Override
     public void onMapClick(LatLng point) {
         new RetrieveFeedTask(getApplicationContext()).execute();
+        setMarkers();
     }
 
     private class RetrieveFeedTask extends AsyncTask<Void, Void, String> {
@@ -96,10 +152,7 @@ public class TrafficMapActivity extends AppCompatActivity implements OnMapReadyC
         }
 
         protected void onPostExecute(String response) {
-            String rawData[] = response.split("\\r?\\n");
-            getIntent().putExtra("DATA", rawData);
-            finish();
-            startActivity(getIntent());
+            getIntent().putExtra("DATA", response);
         }
 
 
@@ -155,5 +208,26 @@ public class TrafficMapActivity extends AppCompatActivity implements OnMapReadyC
             }
             return sb.toString();
         }
+    }
+
+    public JSONObject getLatestFromJson(JSONObject input) {
+        Iterator<?> keys = input.keys();
+        SimpleDateFormat sdf = new SimpleDateFormat("dd-MMM-yyyy HH:mm:ss", Locale.US);
+        try {
+            Date latest = sdf.parse("01-Jan-1900 00:00:00");
+            String latestKey = "";
+            while( keys.hasNext() ) {
+                String key = (String) keys.next();
+                Date  current = sdf.parse(key);
+                if (current.after(latest)) {
+                    latest = current;
+                    latestKey = key;
+                }
+            }
+            return (JSONObject) input.getJSONArray(latestKey).get(0);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
